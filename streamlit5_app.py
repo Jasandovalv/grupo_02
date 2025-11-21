@@ -1,37 +1,62 @@
 import streamlit as st
-
-# --------------------------------------
-# Configuración de la página
-# --------------------------------------
-st.set_page_config(page_title="Gráfico de emisiones CO₂", layout="wide")
-st.title("📊 Gráfico de barras – Emisiones de CO₂ por país")
-# Cargar datos
-# --------------------------------------
-csv_path = "/Users/jaimesandoval/Desktop/grupo_02/co2/emissions_per_country/annual-co2-emissions-per-country.csv"
 import pandas as pd
-import altair as alt
+import plotly.express as px
 
-# Cargar datos
-df = pd.read_csv(csv_path)
+# --------------------------------------
+# Configuración
+# --------------------------------------
+st.set_page_config(page_title="Emisiones de CO₂", layout="wide")
+st.title("📊 Gráfico de barras – Emisiones de CO₂ por país")
 
-# Interfaces de selección de país y año
-paises = df['Entity'].unique()
-pais_seleccionado = st.selectbox('Selecciona un país', paises)
+# --------------------------------------
+# URL RAW de GitHub
+# --------------------------------------
+csv_url = "https://github.com/Jasandovalv/grupo_02/blob/main/co2/emissions_per_country/annual-co2-emissions-per-country.csv"
 
-anios = df['Year'].unique()
-anio_seleccionado = st.selectbox('Selecciona un año', sorted(anios))
+# --------------------------------------
+# Cargar datos con caché
+# --------------------------------------
+@st.cache_data
+def load_data(url):
+    return pd.read_csv(url)
 
-# Filtrar datos por país y año seleccionado
-df_filtrado = df[(df['Entity'] == pais_seleccionado) & (df['Year'] == anio_seleccionado)]
+df = load_data(csv_url)
 
+# --------------------------------------
+# Procesar CSV
+# --------------------------------------
+df = df.rename(columns={"Entity": "country", "Code": "code", "Year": "year"})
+df["code"] = df["code"].astype(str).str.upper()
+df = df[df["code"].str.len() == 3]
+
+value_cols = [c for c in df.columns if c not in ["country", "code", "year"]]
+df = df.rename(columns={value_cols[0]: "co2"})
+df["co2"] = pd.to_numeric(df["co2"], errors="coerce")
+
+# --------------------------------------
+# Selector de año
+# --------------------------------------
+years = sorted(df["year"].unique())
+selected_year = st.sidebar.selectbox("Selecciona un año:", years)
+
+df_year = df[df["year"] == selected_year].sort_values("co2", ascending=False)
+
+# --------------------------------------
 # Gráfico de barras
-if not df_filtrado.empty:
-    st.subheader(f'Emisiones de CO₂ en {pais_seleccionado} - {anio_seleccionado}')
-    chart = alt.Chart(df_filtrado).mark_bar().encode(
-        x='Entityy:N',
-        y='Annual CO₂ emissions:Q',
-        color=alt.value("#0072B5")
-    )
-    st.altair_chart(chart, use_container_width=True)
-else:
-    st.write("No hay datos para la selección hecha.")
+# --------------------------------------
+fig = px.bar(
+    df_year.head(20),
+    x="country",
+    y="co2",
+    title=f"Top 20 países emisores en {selected_year}",
+    labels={"country": "País", "co2": "Ton CO₂"}
+)
+fig.update_layout(xaxis_tickangle=-45)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# --------------------------------------
+# Tabla
+# --------------------------------------
+st.subheader("📄 Tabla del año seleccionado")
+st.dataframe(df_year, use_container_width=True)
